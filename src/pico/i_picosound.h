@@ -21,7 +21,7 @@
 #define __I_PICO_SOUND__
 
 #include "pico.h"
-typedef struct audio_buffer audio_buffer_t;
+#include <stdint.h>
 
 #if USE_EMU8950_OPL
 #define PICO_SOUND_SAMPLE_FREQ 49716
@@ -34,6 +34,19 @@ typedef struct audio_buffer audio_buffer_t;
 // this is the defaul tin game not 16
 #define NUM_SOUND_CHANNELS 8
 #endif
+
+// Lightweight audio buffer (replaces pico-extras audio_buffer_t)
+typedef struct audio_buffer_data {
+    uint8_t *bytes;
+    uint32_t size;
+} audio_buffer_data_t;
+
+typedef struct audio_buffer {
+    audio_buffer_data_t buf_storage;
+    audio_buffer_data_t *buffer;
+    uint32_t max_sample_count;
+    uint32_t sample_count;
+} audio_buffer_t;
 
 void I_PicoSoundSetMusicGenerator(void (*generator)(audio_buffer_t *buffer));
 bool I_PicoSoundIsInitialized(void);

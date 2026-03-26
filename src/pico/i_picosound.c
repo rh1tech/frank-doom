@@ -33,24 +33,13 @@
 
 #include "doomtype.h"
 #include "i_picosound.h"
-#include "murmdoom_log.h"
-#define none pico_audio_enum_none
-#include "pico/audio_i2s.h"
-#undef none
-#include "pico/binary_info.h"
+#include "audio.h"
 #include "pico/stdlib.h"
 #include "hardware/gpio.h"
+#include "hardware/sync.h"
 
 #ifndef INT16_MAX
 #include <limits.h>
-#endif
-
-#ifndef PICO_AUDIO_I2S_DMA_CHANNEL
-#define PICO_AUDIO_I2S_DMA_CHANNEL 6
-#endif
-
-#ifndef PICO_AUDIO_I2S_STATE_MACHINE
-#define PICO_AUDIO_I2S_STATE_MACHINE 0
 #endif
 
 #define ADPCM_BLOCK_SIZE 128
@@ -62,13 +51,8 @@
 #define SOUND_LOW_PASS 1
 #endif
 
-// Enable increased I2S drive strength for cleaner signal
-#ifndef INCREASE_I2S_DRIVE_STRENGTH
-#define INCREASE_I2S_DRIVE_STRENGTH 1
-#endif
-
 #define MIX_MAX_VOLUME 128
-typedef struct channel_s channel_t;
+typedef struct channel_s pico_channel_t;
 
 static volatile enum {
     FS_NONE,
@@ -94,7 +78,8 @@ struct channel_s
     int8_t decompressed[ADPCM_SAMPLES_PER_BLOCK_SIZE];
 };
 
-static struct audio_buffer_pool *producer_pool;
+// I2S driver config
+static i2s_config_t i2s_cfg;
 
 #ifndef PICO_SOUND_BUFFER_SAMPLES
 #ifndef TICRATE
@@ -106,16 +91,35 @@ static struct audio_buffer_pool *producer_pool;
 #define PICO_SOUND_BUFFER_SAMPLES ((PICO_SOUND_SAMPLE_FREQ + (TICRATE - 1)) / TICRATE)
 #endif
 
-static struct audio_format audio_format = {
-        .format = AUDIO_BUFFER_FORMAT_PCM_S16,
-        .sample_freq = PICO_SOUND_SAMPLE_FREQ,
-        .channel_count = 2,
-};
+// Ring buffer: game loop fills ahead, DMA IRQ consumes via fill callback.
+// 4 slots gives ~114 ms of slack for jittery game tics.
+#define MIX_RING_COUNT 4
+static int16_t mix_ring[MIX_RING_COUNT][PICO_SOUND_BUFFER_SAMPLES * 2];
+static volatile uint32_t mix_rd = 0;  // read by IRQ
+static volatile uint32_t mix_wr = 0;  // written by game loop
 
-static struct audio_buffer_format producer_format = {
-        .format = &audio_format,
-        .sample_stride = 4
-};
+static audio_buffer_t mix_buffer;
+
+static void setup_mix_buffer_for_slot(uint32_t slot_idx) {
+    mix_buffer.buf_storage.bytes = (uint8_t *)mix_ring[slot_idx];
+    mix_buffer.buf_storage.size = PICO_SOUND_BUFFER_SAMPLES * 4;
+    mix_buffer.buffer = &mix_buffer.buf_storage;
+    mix_buffer.max_sample_count = PICO_SOUND_BUFFER_SAMPLES;
+    mix_buffer.sample_count = 0;
+}
+
+// Called from DMA IRQ -- copies pre-mixed audio to DMA buffer
+static void i2s_fill_audio(int buf_index, uint32_t *buf, uint32_t frames) {
+    if (mix_rd < mix_wr) {
+        uint32_t idx = mix_rd % MIX_RING_COUNT;
+        memcpy(buf, mix_ring[idx], frames * sizeof(uint32_t));
+        __dmb();
+        mix_rd++;
+    } else {
+        // Underrun -- output silence
+        memset(buf, 0, frames * sizeof(uint32_t));
+    }
+}
 
 // ====== FROM ADPCM-LIB =====
 #define CLIP(data, min, max) \
@@ -148,7 +152,7 @@ static const int index_table[] = {
 static void (*music_generator)(audio_buffer_t *buffer);
 
 static boolean sound_initialized = false;
-static channel_t channels[NUM_SOUND_CHANNELS];
+static pico_channel_t channels[NUM_SOUND_CHANNELS];
 static boolean use_sfx_prefix = true;
 
 static inline int16_t clamp_s16(int32_t v) {
@@ -268,7 +272,7 @@ int adpcm_decode_block_s8(int8_t *outbuf, const uint8_t *inbuf, int inbufsize)
 #endif
 }
 
-static void decompress_buffer(channel_t *channel) {
+static void decompress_buffer(pico_channel_t *channel) {
     if (channel->data == channel->data_end) {
         channel->decompressed_size = 0;
     } else {
@@ -290,7 +294,7 @@ static void decompress_buffer(channel_t *channel) {
     }
 }
 
-static boolean init_channel_for_sfx(channel_t *ch, const sfxinfo_t *sfxinfo, int pitch)
+static boolean init_channel_for_sfx(pico_channel_t *ch, const sfxinfo_t *sfxinfo, int pitch)
 {
     const sfxinfo_t *base = base_sfxinfo(sfxinfo);
     int lumpnum = base->lumpnum;
@@ -332,13 +336,6 @@ static boolean init_channel_for_sfx(channel_t *ch, const sfxinfo_t *sfxinfo, int
 
     uint32_t sample_freq = read_le16(data + 2);
 
-    static int header_logs = 0;
-    if (header_logs < 12) {
-        MURMDOOM_LOG("I_Pico_StartSound: header %s format=%04x adpcm=%d signed_pcm=%d rate=%u declared=%u payload=%d\n",
-                    DEH_String(base->name), format, is_adpcm, is_signed_pcm, (unsigned)sample_freq,
-                    (unsigned)declared_length, payload_length);
-        header_logs++;
-    }
     if (pitch == NORM_PITCH)
         ch->step = sample_freq * 65536 / PICO_SOUND_SAMPLE_FREQ;
     else
@@ -348,10 +345,6 @@ static boolean init_channel_for_sfx(channel_t *ch, const sfxinfo_t *sfxinfo, int
     ch->offset = 0;
 
 #if SOUND_LOW_PASS
-//    const float dt = 1.0f / PICO_SOUND_SAMPLE_FREQ;
-//    const float rc = 1.0f / (3.14f * sample_freq);
-//    const float alpha = dt / (rc + dt);
-//    ch->alpha256 = (int)(256*alpha);
     ch->alpha256 = 256u * 201u * sample_freq / (201u * sample_freq + 64u * (uint)PICO_SOUND_SAMPLE_FREQ);
 #endif
     return true;
@@ -403,6 +396,10 @@ static void I_Pico_UpdateSoundParams(int handle, int vol, int sep)
     left = ((254 - sep) * vol) / 127;
     right = ((sep) * vol) / 127;
 
+    // Scale down SFX volume to avoid clipping when mixing on top of music
+    left /= 16;
+    right /= 16;
+
     if (left < 0) left = 0;
     else if ( left > 255) left = 255;
     if (right < 0) right = 0;
@@ -417,18 +414,11 @@ static int I_Pico_StartSound(sfxinfo_t *sfxinfo, int channel, int vol, int sep, 
     if (!check_and_init_channel(channel)) return -1;
 
     stop_channel(channel);
-    channel_t *ch = &channels[channel];
+    pico_channel_t *ch = &channels[channel];
     if (!init_channel_for_sfx(ch, sfxinfo, pitch)) {
         assert(!is_channel_playing(channel)); // don't expect to have to mark it sotpped
     }
     I_Pico_UpdateSoundParams(channel, vol, sep);
-    static int start_logs = 0;
-    if (start_logs < 8) {
-        MURMDOOM_LOG("I_Pico_StartSound: %s channel %d vol %d sep %d\n",
-                    DEH_String(sfxinfo->name), channel, vol, sep);
-        start_logs++;
-    }
-    // Removed debug dump call
     return channel;
 }
 
@@ -459,10 +449,10 @@ static void mix_audio_buffer(audio_buffer_t *buffer)
             continue;
         }
         active_channels++;
-        channel_t *channel = &channels[ch];
+        pico_channel_t *channel = &channels[ch];
         assert(channel->decompressed_size);
-        int voll = channel->left/2;
-        int volr = channel->right/2;
+        int voll = channel->left;
+        int volr = channel->right;
         uint offset_end = channel->decompressed_size * 65536;
         assert(channel->offset < offset_end);
         int16_t *samples = (int16_t *)buffer->buffer->bytes;
@@ -522,50 +512,19 @@ static void mix_audio_buffer(audio_buffer_t *buffer)
             }
         }
     }
-
-    static int mix_logs = 0;
-    static int mix_logs_after_activity = 0;
-    bool should_log_mix = mix_logs < 4;
-    if (active_channels && mix_logs_after_activity < 12) {
-        should_log_mix = true;
-    }
-    if (should_log_mix) {
-        int16_t *sample_view = (int16_t *)buffer->buffer->bytes;
-        int32_t max = 0;
-        for (int i = 0; i < buffer->sample_count * 2; ++i) {
-            int32_t v = sample_view[i];
-            if (v < 0) v = -v;
-            if (v > max) max = v;
-        }
-        MURMDOOM_LOG("I_Pico_UpdateSound: mixed %d samples (active=%d), peak=%ld first=%d second=%d\n",
-                    buffer->sample_count, active_channels, (long)max,
-                    sample_view[0], sample_view[1]);
-        mix_logs++;
-        if (active_channels) {
-            mix_logs_after_activity++;
-        }
-    }
-
-    give_audio_buffer(producer_pool, buffer);
 }
 
 static void I_Pico_UpdateSound(void)
 {
     if (!sound_initialized) return;
 
-    bool mixed = false;
-    audio_buffer_t *buffer;
-    while ((buffer = take_audio_buffer(producer_pool, false)) != NULL) {
-        mixed = true;
-        mix_audio_buffer(buffer);
-    }
-
-    if (!mixed) {
-        static int buffer_skip_logs = 0;
-        if (buffer_skip_logs < 4) {
-            MURMDOOM_LOG("I_Pico_UpdateSound: no buffer ready this tick\n");
-            buffer_skip_logs++;
-        }
+    // Pre-fill ring buffer as far ahead as possible
+    while ((mix_wr - mix_rd) < MIX_RING_COUNT) {
+        uint32_t idx = mix_wr % MIX_RING_COUNT;
+        setup_mix_buffer_for_slot(idx);
+        mix_audio_buffer(&mix_buffer);
+        __dmb();
+        mix_wr++;
     }
 }
 
@@ -575,6 +534,7 @@ static void I_Pico_ShutdownSound(void)
     {
         return;
     }
+    i2s_deinit(&i2s_cfg);
     sound_initialized = false;
 }
 
@@ -582,51 +542,34 @@ static boolean I_Pico_InitSound(boolean _use_sfx_prefix)
 {
     use_sfx_prefix = _use_sfx_prefix;
 
-    // todo this will likely need adjustment - maybe with IRQs/double buffer & pull from audio we can make it quite small
-    MURMDOOM_LOG("I_Pico_InitSound: creating producer pool\n");
-    // Increased buffer count from 3 to 4 for smoother audio and reduced dropouts
-    producer_pool = audio_new_producer_pool(&producer_format, 4, PICO_SOUND_BUFFER_SAMPLES);
-    if (producer_pool == NULL)
-    {
-        MURMDOOM_WARN("I_Pico_InitSound: failed to allocate producer pool\n");
-        return false;
-    }
-
-    struct audio_i2s_config config = {
-            .data_pin = PICO_AUDIO_I2S_DATA_PIN,
-            .clock_pin_base = PICO_AUDIO_I2S_CLOCK_PIN_BASE,
-            .dma_channel = PICO_AUDIO_I2S_DMA_CHANNEL,
-            .pio_sm = PICO_AUDIO_I2S_STATE_MACHINE,
+    i2s_cfg = (i2s_config_t){
+        .sample_freq = PICO_SOUND_SAMPLE_FREQ,
+        .channel_count = 2,
+        .data_pin = PICO_AUDIO_I2S_DATA_PIN,
+        .clock_pin_base = PICO_AUDIO_I2S_CLOCK_PIN_BASE,
+        .pio = pio0,
+        .dma_trans_count = PICO_SOUND_BUFFER_SAMPLES,
+        .volume = 0, // max volume (no attenuation)
     };
 
-            MURMDOOM_LOG("I_Pico_InitSound: calling audio_i2s_setup (PIO %d pins D%d CLK%d, DMA %d SM %d)\n",
-                PICO_AUDIO_I2S_PIO,
-                PICO_AUDIO_I2S_DATA_PIN,
-                PICO_AUDIO_I2S_CLOCK_PIN_BASE,
-                PICO_AUDIO_I2S_DMA_CHANNEL,
-                PICO_AUDIO_I2S_STATE_MACHINE);
-    const struct audio_format *output_format;
-    output_format = audio_i2s_setup(&audio_format, &config);
-    if (!output_format) {
-        panic("PicoAudio: Unable to open audio device.\n");
-    }
-    MURMDOOM_LOG("I_Pico_InitSound: audio_i2s_setup succeeded\n");
+    printf("I_Pico_InitSound: I2S init (PIO0 pins D%d CLK%d, %d Hz, %d samples/buf, ring=%d)\n",
+           PICO_AUDIO_I2S_DATA_PIN,
+           PICO_AUDIO_I2S_CLOCK_PIN_BASE,
+           PICO_SOUND_SAMPLE_FREQ,
+           PICO_SOUND_BUFFER_SAMPLES,
+           MIX_RING_COUNT);
 
-#if INCREASE_I2S_DRIVE_STRENGTH
-    bi_decl(bi_program_feature("12mA I2S"));
-    gpio_set_drive_strength(PICO_AUDIO_I2S_DATA_PIN, GPIO_DRIVE_STRENGTH_12MA);
-    gpio_set_drive_strength(PICO_AUDIO_I2S_CLOCK_PIN_BASE, GPIO_DRIVE_STRENGTH_12MA);
-    gpio_set_drive_strength(PICO_AUDIO_I2S_CLOCK_PIN_BASE+1, GPIO_DRIVE_STRENGTH_12MA);
-#endif
-    // we want to pass thr
-    MURMDOOM_LOG("I_Pico_InitSound: connecting audio pipeline\n");
-    bool ok = audio_i2s_connect_extra(producer_pool, false, 0, 0, NULL);
-    assert(ok);
-    MURMDOOM_LOG("I_Pico_InitSound: enabling I2S\n");
-    audio_i2s_set_enabled(true);
+    i2s_init(&i2s_cfg);
+
+    // Pre-fill all ring buffer slots with silence, then register fill callback
+    memset(mix_ring, 0, sizeof(mix_ring));
+    mix_rd = 0;
+    mix_wr = 0;
+    i2s_set_fill_callback(i2s_fill_audio);
+    i2s_start();
 
     sound_initialized = true;
-    MURMDOOM_LOG("I_Pico_InitSound: initialization complete\n");
+    printf("I_Pico_InitSound: initialization complete\n");
     return true;
 }
 
@@ -666,8 +609,8 @@ bool I_PicoSoundIsInitialized(void) {
 
 void I_PicoSoundSetMusicGenerator(void (*generator)(audio_buffer_t *buffer)) {
     music_generator = generator;
-    MURMDOOM_LOG("I_PicoSoundSetMusicGenerator: music generator %s\n",
-                generator ? "SET" : "CLEARED");
+    printf("I_PicoSoundSetMusicGenerator: music generator %s\n",
+           generator ? "SET" : "CLEARED");
 }
 
 // Only define stub music module if OPL music is not used

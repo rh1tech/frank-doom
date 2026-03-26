@@ -28,12 +28,6 @@ message(STATUS "Board: ${BOARD_VARIANT}, CPU: ${CPU_SPEED} MHz, PSRAM: ${PSRAM_S
 
 include(pico_sdk_import.cmake)
 
-# Import pico-extras for audio_i2s library
-set(PICO_EXTRAS_PATH ${CMAKE_CURRENT_LIST_DIR}/pico-extras CACHE PATH "Path to pico-extras")
-if(EXISTS ${PICO_EXTRAS_PATH}/external/pico_extras_import.cmake)
-    include(${PICO_EXTRAS_PATH}/external/pico_extras_import.cmake)
-endif()
-
 project(murmdoom C CXX ASM)
 set(CMAKE_C_STANDARD 11)
 set(CMAKE_CXX_STANDARD 17)
@@ -44,11 +38,6 @@ string(STRIP "${MURMDOOM_VERSION_RAW}" MURMDOOM_VERSION_RAW)
 string(REGEX REPLACE "[ \t]+" "." MURMDOOM_VERSION "${MURMDOOM_VERSION_RAW}")
 
 pico_sdk_init()
-
-# Initialize pico-extras if available
-if(COMMAND pico_extras_init)
-    pico_extras_init()
-endif()
 
 # Add fatfs
 add_subdirectory(src/fatfs)
@@ -109,9 +98,13 @@ add_executable(murmdoom
     src/doomgeneric_fatfs/w_file_fatfs.c
     src/doomgeneric_fatfs/m_misc_fatfs.c
     src/doomgeneric_fatfs/stdio_fatfs.c
+    src/pico/audio.c
     src/opl/slot_render_pico.S
     ${DOOMGENERIC_SOURCES}
 )
+
+# Generate PIO header for I2S audio (must be after add_executable)
+add_subdirectory(drivers/audio)
 
 target_include_directories(murmdoom PRIVATE
     src
@@ -140,9 +133,6 @@ target_compile_definitions(murmdoom PRIVATE
     USE_PICO_SOUND  # Use Pico audio i2s backend
     USE_OPL_MUSIC=1  # Enable OPL music
     USE_EMU8950_OPL=1  # Use emu8950 OPL emulator
-    PICO_AUDIO_I2S_PIO=1
-    PICO_AUDIO_I2S_STATE_MACHINE=2
-    PICO_AUDIO_I2S_DMA_IRQ=1
     NUM_SOUND_CHANNELS=16
     NO_USE_LIBSAMPLERATE
     NO_USE_TIMIDITY
@@ -161,7 +151,7 @@ target_compile_definitions(murmdoom PRIVATE
     EMU8950_LINEAR_END_OF_NOTE_OPTIMIZATION=1
     EMU8950_NO_PERCUSSION_MODE=1
     EMU8950_LINEAR=1
-    EMU8950_ASM=1
+    EMU8950_ASM=0
     EMU8950_SLOT_RENDER=1
     EMU8950_NO_RATECONV=1
     PICO_ON_DEVICE=1
@@ -202,7 +192,7 @@ endif()
 target_link_libraries(murmdoom
     pico_stdlib
     pico_multicore
-    pico_audio_i2s
+    hardware_clocks
     hardware_spi
     hardware_dma
     hardware_pio

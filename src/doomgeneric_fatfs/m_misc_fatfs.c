@@ -97,7 +97,7 @@ int M_ReadFile(char *name, byte **buffer)
 
 char *M_TempFile(char *s)
 {
-    char *tempdir = ""; // Use root of SD card
+    char *tempdir = ""; // CWD is already /doom (set by f_chdir in DG_Init)
     return M_StringJoin(tempdir, s, NULL);
 }
 

@@ -825,51 +825,49 @@ void DG_StartScreen(void) {
         int pressed = 0;
         unsigned char key = 0;
         while (DG_GetKey(&pressed, &key)) {
-            if (pressed && key == KEY_ENTER) {
-                if (available_count > 0) {
-                    // Make all existing UI text dark grey (palette index 1) so it's readable
-                    // on the fading background, but keep the loading window text bright.
-                    graphics_set_palette(1, 0x404040);
+            if (pressed && key == KEY_ENTER && available_count > 0) {
+                // Make all existing UI text dark grey (palette index 1) so it's readable
+                // on the fading background, but keep the loading window text bright.
+                graphics_set_palette(1, 0x404040);
 
-                    // Title left was previously black-on-red; redraw it using the (now grey) text color.
-                    draw_text_5x7_scaled(title_x, title_y, title_left, 1, title_scale, false);
+                // Title left was previously black-on-red; redraw it using the (now grey) text color.
+                draw_text_5x7_scaled(title_x, title_y, title_left, 1, title_scale, false);
 
-                    // Remove selection inversion (black text on grey highlight) by redrawing the menu
-                    // without a selected item.
-                    render_iwad_menu_entries(available, available_count, -1, menu_x, menu_y, line_h, menu_w, menu_h, highlight_h);
+                // Remove selection inversion (black text on grey highlight) by redrawing the menu
+                // without a selected item.
+                render_iwad_menu_entries(available, available_count, -1, menu_x, menu_y, line_h, menu_w, menu_h, highlight_h);
 
-                    // Stop animation, fade out the start-screen background, and show a centered loading window.
-                    fade_start_screen_bg_to_black(doom_bg_pal, title_hl_rgb, 10, 20);
+                // Stop animation, fade out the start-screen background, and show a centered loading window.
+                fade_start_screen_bg_to_black(doom_bg_pal, title_hl_rgb, 10, 20);
 
-                    char msg[96];
-                    snprintf(msg, sizeof(msg), "Loading WAD: %s...", available[selected]->filename);
+                char msg[96];
+                snprintf(msg, sizeof(msg), "Loading WAD: %s...", available[selected]->filename);
 
-                    const int pad_x = 10;
-                    const int pad_y = 8;
-                    const int msg_w = text_width_5x7(msg, 1);
-                    int win_w = msg_w + pad_x * 2;
-                    if (win_w > DOOMGENERIC_RESX - 40) win_w = DOOMGENERIC_RESX - 40;
-                    const int win_h = 7 + pad_y * 2;
-                    const int win_x = (DOOMGENERIC_RESX - win_w) / 2;
-                    const int win_y = (DOOMGENERIC_RESY - win_h) / 2;
+                const int pad_x = 10;
+                const int pad_y = 8;
+                const int msg_w = text_width_5x7(msg, 1);
+                int win_w = msg_w + pad_x * 2;
+                if (win_w > DOOMGENERIC_RESX - 40) win_w = DOOMGENERIC_RESX - 40;
+                const int win_h = 7 + pad_y * 2;
+                const int win_x = (DOOMGENERIC_RESX - win_w) / 2;
+                const int win_y = (DOOMGENERIC_RESY - win_h) / 2;
 
-                    fill_rect(win_x, win_y, win_w, win_h, 0);
-                    // Border
-                    fill_rect(win_x, win_y, win_w, 1, 20);
-                    fill_rect(win_x, win_y + win_h - 1, win_w, 1, 20);
-                    fill_rect(win_x, win_y, 1, win_h, 20);
-                    fill_rect(win_x + win_w - 1, win_y, 1, win_h, 20);
+                fill_rect(win_x, win_y, win_w, win_h, 0);
+                // Border
+                fill_rect(win_x, win_y, win_w, 1, 20);
+                fill_rect(win_x, win_y + win_h - 1, win_w, 1, 20);
+                fill_rect(win_x, win_y, 1, win_h, 20);
+                fill_rect(win_x + win_w - 1, win_y, 1, win_h, 20);
 
-                    draw_text_5x7(win_x + pad_x, win_y + pad_y, msg, 20);
+                draw_text_5x7(win_x + pad_x, win_y + pad_y, msg, 20);
 
-                    static char *new_argv[4];
-                    new_argv[0] = (char *)"doom";
-                    new_argv[1] = (char *)"-iwad";
-                    new_argv[2] = (char *)available[selected]->filename;
-                    new_argv[3] = NULL;
-                    myargc = 3;
-                    myargv = new_argv;
-                }
+                static char *new_argv[4];
+                new_argv[0] = (char *)"doom";
+                new_argv[1] = (char *)"-iwad";
+                new_argv[2] = (char *)available[selected]->filename;
+                new_argv[3] = NULL;
+                myargc = 3;
+                myargv = new_argv;
                 return;
             }
 

@@ -25,7 +25,6 @@
 #include <assert.h>
 
 #include "pico/mutex.h"
-#include "pico/audio_i2s.h"
 #include "pico/util/pheap.h"
 #include "hardware/gpio.h"
 #include "i_picosound.h"
@@ -108,7 +107,7 @@ static opl_timer_t timer2 = { 3125, 0, 0, 0 };
 static bool audio_was_initialized = 0;
 
 static inline void Pico_LockMutex(mutex_t *mutex) {
-    
+
 }
 
 static inline void Pico_UnlockMutex(mutex_t *mutex) {
@@ -157,7 +156,7 @@ static void AdvanceTime(unsigned int nsamples)
         // call OPL_SetCallback to schedule new callbacks.
 
         Pico_UnlockMutex(&callback_queue_mutex);
-        
+
         Pico_LockMutex(&callback_mutex);
         callback(callback_data);
         Pico_UnlockMutex(&callback_mutex);
@@ -193,7 +192,7 @@ void OPL_Pico_Mix_callback(audio_buffer_t *audio_buffer)
     if (!audio_buffer || !audio_buffer->buffer) {
         return;
     }
-    
+
     unsigned int filled, buffer_samples;
 #if DOOM_TINY
     if (restart_song_state == 2) {
@@ -206,14 +205,7 @@ void OPL_Pico_Mix_callback(audio_buffer_t *audio_buffer)
         filled = 0;
         buffer_samples = audio_buffer->max_sample_count;
 
-//#if PICO_ON_DEVICE
-//        absolute_time_t t0 = get_absolute_time();
-//        gpio_set_mask(1);
-//#endif
         while (filled < buffer_samples) {
-//#if PICO_ON_DEVICE
-//            gpio_set_mask(32);
-//#endif
             uint64_t next_callback_time;
             uint64_t nsamples;
 
@@ -240,7 +232,6 @@ void OPL_Pico_Mix_callback(audio_buffer_t *audio_buffer)
 
             // Add emulator output to buffer.
 
-            //OPL3_GenerateStream(&opl_chip, (Bit16s *) (audio_buffer->buffer->bytes + filled * 4), nsamples);
 #if USE_WOODY_OPL
             int16_t *sndptr = (int16_t *) (audio_buffer->buffer->bytes + filled * 4);
             // todo store in stereo?
@@ -254,23 +245,18 @@ void OPL_Pico_Mix_callback(audio_buffer_t *audio_buffer)
                 if (filled + nsamples > buffer_samples) {
                     nsamples = buffer_samples - filled;
                 }
-                
+
                 // OPL outputs 32-bit samples but audio buffer expects 16-bit
                 // Use file-scope buffer to avoid any stack/corruption issues
                 OPL_calc_buffer_stereo(emu8950_opl, opl_temp_buffer, nsamples);
-                
-                // Convert 32-bit packed stereo to 16-bit separate L/R channels
-                // OPL_calc_buffer_stereo writes: buffer[i] = (left << 16) | right
-                // where left and right are the same (mono duplicated to stereo)
+
+                // Extract mono sample from packed stereo (both halves identical)
                 int16_t *buffer_start = (int16_t *)audio_buffer->buffer->bytes;
-                int16_t *sndptr16 = buffer_start + (filled * 2); // filled samples × 2 channels
+                int16_t *sndptr16 = buffer_start + (filled * 2);
                 for (unsigned int i = 0; i < nsamples; i++) {
-                    // Each opl_temp_buffer[i] contains both channels packed
-                    int32_t packed = opl_temp_buffer[i];
-                    int16_t left = (int16_t)(packed >> 16);
-                    int16_t right = (int16_t)(packed & 0xFFFF);
-                    sndptr16[i * 2] = left;
-                    sndptr16[i * 2 + 1] = right;
+                    int16_t sample = (int16_t)(opl_temp_buffer[i] & 0xFFFF);
+                    sndptr16[i * 2] = sample;
+                    sndptr16[i * 2 + 1] = sample;
                 }
             }
 #else
@@ -285,36 +271,9 @@ void OPL_Pico_Mix_callback(audio_buffer_t *audio_buffer)
 
             // Invoke callbacks for this point in time.
 
-//#if PICO_ON_DEVICE
-//            gpio_clr_mask(32);
-//#endif
             AdvanceTime(nsamples);
         }
         audio_buffer->sample_count = audio_buffer->max_sample_count;
-#if !USE_WOODY_OPL
-        // Amplify by 8x for audible output
-        int16_t *samples = (int16_t *)audio_buffer->buffer->bytes;
-        for(uint i=0;i<audio_buffer->sample_count * 2; i++) {
-            samples[i] <<= 3;
-        }
-#endif
-//#if PICO_ON_DEVICE
-//        gpio_clr_mask(1);
-//        int32_t t = (int32_t)absolute_time_diff_us(t0, get_absolute_time());
-//        static int max_t;
-//        static int ii;
-//        static int total;
-//        total += t;
-//        if (t > max_t) {
-//            max_t = t;
-//        }
-//        ii++;
-//        if (!(ii &127)) {
-//            printf("AVG %d MAX %d\n", total / 128, max_t);
-//            max_t = 0;
-//            total = 0;
-//        }
-//#endif
 }
 
 static void OPL_Pico_Shutdown(void)
