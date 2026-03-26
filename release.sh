@@ -49,18 +49,23 @@ if [[ $NEXT_MINOR -ge 100 ]]; then
     NEXT_MINOR=0
 fi
 
-# Interactive version input
+# Accept version from command line or prompt interactively
 echo ""
 echo -e "${CYAN}┌─────────────────────────────────────────────────────────────────┐${NC}"
-echo -e "${CYAN}│                    frank-doom Release Builder                     │${NC}"
+echo -e "${CYAN}│                    frank-doom Release Builder                   │${NC}"
 echo -e "${CYAN}└─────────────────────────────────────────────────────────────────┘${NC}"
 echo ""
 echo -e "Last version: ${YELLOW}${LAST_MAJOR}.$(printf '%02d' $LAST_MINOR)${NC}"
 echo ""
 
 DEFAULT_VERSION="${NEXT_MAJOR}.$(printf '%02d' $NEXT_MINOR)"
-read -p "Enter version [default: $DEFAULT_VERSION]: " INPUT_VERSION
-INPUT_VERSION=${INPUT_VERSION:-$DEFAULT_VERSION}
+if [[ -n "$1" ]]; then
+    INPUT_VERSION="$1"
+    echo "Version from command line: $INPUT_VERSION"
+else
+    read -p "Enter version [default: $DEFAULT_VERSION]: " INPUT_VERSION
+    INPUT_VERSION=${INPUT_VERSION:-$DEFAULT_VERSION}
+fi
 
 # Parse version (handle both "1.00" and "1 00" formats)
 if [[ "$INPUT_VERSION" == *"."* ]]; then
