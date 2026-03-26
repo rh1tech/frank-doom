@@ -23,7 +23,7 @@
 #include <string.h>
 #include <math.h>
 
-#include "murmdoom_log.h"
+#include "frank_doom_log.h"
 
 #include "i_system.h"
 
@@ -181,7 +181,7 @@ void V_DrawPatch(int x, int y, patch_t *patch)
      || y + SHORT(patch->height) > SCREENHEIGHT)
     {
         // Instead of crashing, just skip drawing this patch
-        MURMDOOM_WARN("V_DrawPatch: skipping off-screen patch x=%i y=%i w=%i h=%i\n",
+        FRANK_DOOM_WARN("V_DrawPatch: skipping off-screen patch x=%i y=%i w=%i h=%i\n",
                      x, y, SHORT(patch->width), SHORT(patch->height));
         return;
     }

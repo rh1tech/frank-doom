@@ -13,7 +13,7 @@
 #include <stdlib.h>
 #include <string.h>
 #include <assert.h>
-#include "murmdoom_log.h"
+#include "frank_doom_log.h"
 
 // Increased from 1024 to handle 1421 samples per buffer at 49716 Hz
 #define SAMPLE_BUF_SIZE 2048
@@ -1926,14 +1926,14 @@ void OPL_writeReg(OPL *opl, uint32_t reg, uint8_t data) {
 #if !EMU8950_NO_TIMER
             latch_timer1(opl);
 #else
-        MURMDOOM_WARN("WARNING TIMER1 LATCH\n");
+        FRANK_DOOM_WARN("WARNING TIMER1 LATCH\n");
 #endif
         }
         if (data & 0x02) {
 #if !EMU8950_NO_TIMER
             latch_timer2(opl);
 #else
-        MURMDOOM_WARN("WARNING TIMER2 LATCH\n");
+        FRANK_DOOM_WARN("WARNING TIMER2 LATCH\n");
 #endif
         }
 

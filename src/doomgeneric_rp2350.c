@@ -16,7 +16,7 @@
 #include "ps2kbd_wrapper.h"
 #include "ps2mouse_wrapper.h"
 #include "usbhid_wrapper.h"
-#include "murmdoom_log.h"
+#include "frank_doom_log.h"
 #include "doomkeys.h"
 #include "m_argv.h"
 #include <stdio.h>
@@ -592,7 +592,7 @@ static void print_available_wads_to_console(void) {
 // External variables from i_video.c (when CMAP256 is defined)
 extern boolean palette_changed;
 
-#include "murmdoom_log.h"
+#include "frank_doom_log.h"
 // Match struct color from i_video.h (Little Endian: b, g, r, a)
 extern struct {
     uint8_t b;
@@ -723,13 +723,13 @@ void DG_StartScreen(void) {
 
     int selected = 0;
 
-#ifndef MURMDOOM_VERSION
-#define MURMDOOM_VERSION "?"
+#ifndef FRANK_DOOM_VERSION
+#define FRANK_DOOM_VERSION "?"
 #endif
 
-    const char *title_left = "MurmDOOM";
+    const char *title_left = "FRANK DOOM";
     char title_right[96];
-    snprintf(title_right, sizeof(title_right), " by Mikhail Matveev v%s", MURMDOOM_VERSION);
+    snprintf(title_right, sizeof(title_right), " by Mikhail Matveev v%s", FRANK_DOOM_VERSION);
 
     // Print WAD scan after ~3s or as soon as USB CDC is connected.
     // If the first print happens while disconnected (common if the host opens the monitor late),
@@ -773,14 +773,14 @@ void DG_StartScreen(void) {
              (unsigned long)cpu_mhz,
              (int)DPSRAM_SPEED,
              (unsigned long)psram_cs);
-    const char *status3 = "https://github.com/rh1tech/murmdoom";
+    const char *status3 = "https://github.com/rh1tech/frank-doom";
 
     // Compute menu width from available labels.
     const int menu_w = (available_count > 0 ? max_label_width_5x7(available, available_count, 1) : (6 * 4));
 
     draw_animated_background_border(to_ms_since_boot(get_absolute_time()), panel_x, panel_y, panel_w, panel_h);
     fill_rect(panel_x, panel_y, panel_w, panel_h, 0);
-    // Highlight "MurmDOOM" with red background and black text.
+    // Highlight "FRANK DOOM" with red background and black text.
     const int title_y = panel_y + 10;
     fill_rect(title_x - 2, title_y - 2, title_left_w + 4, 7 * title_scale + 4, 18);
     draw_text_5x7_scaled(title_x, title_y, title_left, 0, title_scale, false);
@@ -965,16 +965,16 @@ void I_AtExit(void (*func)(void), boolean run_on_error) {
 }
 
 void I_PrintBanner(char *msg) {
-    MURMDOOM_LOG("%s\n", msg);
+    FRANK_DOOM_LOG("%s\n", msg);
 }
 
 void I_PrintDivider(void) {
-    MURMDOOM_LOG("------------------------------------------------\n");
+    FRANK_DOOM_LOG("------------------------------------------------\n");
 }
 
 void I_PrintStartupBanner(char *gamedescription) {
     I_PrintDivider();
-    MURMDOOM_LOG("%s\n", gamedescription);
+    FRANK_DOOM_LOG("%s\n", gamedescription);
     I_PrintDivider();
 }
 

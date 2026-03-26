@@ -1,6 +1,6 @@
 cmake_minimum_required(VERSION 3.13)
 
-option(MURMDOOM_QUIET "Compile out non-fatal logs" ON)
+option(FRANK_DOOM_QUIET "Compile out non-fatal logs" ON)
 
 # Set board to Pico 2 (RP2350)
 set(PICO_BOARD pico2 CACHE STRING "Pico board type")
@@ -28,14 +28,14 @@ message(STATUS "Board: ${BOARD_VARIANT}, CPU: ${CPU_SPEED} MHz, PSRAM: ${PSRAM_S
 
 include(pico_sdk_import.cmake)
 
-project(murmdoom C CXX ASM)
+project(frank-doom C CXX ASM)
 set(CMAKE_C_STANDARD 11)
 set(CMAKE_CXX_STANDARD 17)
 
 # Inject version.txt as a compile-time string.
-file(READ "${CMAKE_CURRENT_LIST_DIR}/version.txt" MURMDOOM_VERSION_RAW)
-string(STRIP "${MURMDOOM_VERSION_RAW}" MURMDOOM_VERSION_RAW)
-string(REGEX REPLACE "[ \t]+" "." MURMDOOM_VERSION "${MURMDOOM_VERSION_RAW}")
+file(READ "${CMAKE_CURRENT_LIST_DIR}/version.txt" FRANK_DOOM_VERSION_RAW)
+string(STRIP "${FRANK_DOOM_VERSION_RAW}" FRANK_DOOM_VERSION_RAW)
+string(REGEX REPLACE "[ \t]+" "." FRANK_DOOM_VERSION "${FRANK_DOOM_VERSION_RAW}")
 
 pico_sdk_init()
 
@@ -92,7 +92,7 @@ list(APPEND DOOMGENERIC_SOURCES
 # Remove duplicates
 list(REMOVE_DUPLICATES DOOMGENERIC_SOURCES)
 
-add_executable(murmdoom
+add_executable(frank-doom
     src/main.c
     src/doomgeneric_rp2350.c
     src/doomgeneric_fatfs/w_file_fatfs.c
@@ -106,7 +106,7 @@ add_executable(murmdoom
 # Generate PIO header for I2S audio (must be after add_executable)
 add_subdirectory(drivers/audio)
 
-target_include_directories(murmdoom PRIVATE
+target_include_directories(frank-doom PRIVATE
     src
     src/doomgeneric/doomgeneric
     src/pico
@@ -118,7 +118,7 @@ target_include_directories(murmdoom PRIVATE
     # drivers/usbhid is added conditionally by usbhid library
 )
 
-target_compile_definitions(murmdoom PRIVATE
+target_compile_definitions(frank-doom PRIVATE
     BOARD_${BOARD_VARIANT}
     CPU_CLOCK_MHZ=${CPU_SPEED}
     CPU_VOLTAGE=${CPU_VOLTAGE}
@@ -155,18 +155,18 @@ target_compile_definitions(murmdoom PRIVATE
     EMU8950_SLOT_RENDER=1
     EMU8950_NO_RATECONV=1
     PICO_ON_DEVICE=1
-    MURMDOOM_VERSION="${MURMDOOM_VERSION}"
+    FRANK_DOOM_VERSION="${FRANK_DOOM_VERSION}"
 )
 
-if(MURMDOOM_QUIET)
-    target_compile_definitions(murmdoom PRIVATE MURMDOOM_QUIET=1)
+if(FRANK_DOOM_QUIET)
+    target_compile_definitions(frank-doom PRIVATE FRANK_DOOM_QUIET=1)
 else()
-    target_compile_definitions(murmdoom PRIVATE MURMDOOM_QUIET=0)
+    target_compile_definitions(frank-doom PRIVATE FRANK_DOOM_QUIET=0)
 endif()
 
 # Set peripheral pins based on board variant
 if(BOARD_VARIANT STREQUAL "M1")
-    target_compile_definitions(murmdoom PRIVATE
+    target_compile_definitions(frank-doom PRIVATE
         # I2S Audio
         PICO_AUDIO_I2S_DATA_PIN=26
         PICO_AUDIO_I2S_CLOCK_PIN_BASE=27
@@ -177,7 +177,7 @@ if(BOARD_VARIANT STREQUAL "M1")
         SDCARD_PIN_SPI0_MISO=4
     )
 elseif(BOARD_VARIANT STREQUAL "M2")
-    target_compile_definitions(murmdoom PRIVATE
+    target_compile_definitions(frank-doom PRIVATE
         # I2S Audio
         PICO_AUDIO_I2S_DATA_PIN=9
         PICO_AUDIO_I2S_CLOCK_PIN_BASE=10
@@ -189,7 +189,7 @@ elseif(BOARD_VARIANT STREQUAL "M2")
     )
 endif()
 
-target_link_libraries(murmdoom
+target_link_libraries(frank-doom
     pico_stdlib
     pico_multicore
     hardware_clocks
@@ -208,7 +208,7 @@ target_link_libraries(murmdoom
 )
 
 # Wrap stdio functions to use FatFS
-target_link_options(murmdoom PRIVATE
+target_link_options(frank-doom PRIVATE
     -Wl,--wrap=fopen
     -Wl,--wrap=fclose
     -Wl,--wrap=fread
@@ -225,11 +225,11 @@ target_link_options(murmdoom PRIVATE
 # so USB CDC stdio is not available. Use UART for debug output instead.
 if(USB_HID_ENABLED)
     message(STATUS "USB HID enabled: Using UART for stdio (USB is Host mode)")
-    pico_enable_stdio_usb(murmdoom 0)
-    pico_enable_stdio_uart(murmdoom 1)
+    pico_enable_stdio_usb(frank-doom 0)
+    pico_enable_stdio_uart(frank-doom 1)
 else()
-    pico_enable_stdio_usb(murmdoom 1)
-    pico_enable_stdio_uart(murmdoom 0)
+    pico_enable_stdio_usb(frank-doom 1)
+    pico_enable_stdio_uart(frank-doom 0)
 endif()
 
-pico_add_extra_outputs(murmdoom)
+pico_add_extra_outputs(frank-doom)

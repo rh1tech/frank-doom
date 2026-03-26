@@ -1,5 +1,5 @@
 /*
- * DOOM - RP2350 Port (murmdoom)
+ * DOOM - RP2350 Port (frank-doom)
  * Main entry point with overclocking support
  */
 #include "doomgeneric.h"
@@ -10,7 +10,7 @@
 #include <stdio.h>
 
 #include "board_config.h"
-#include "murmdoom_log.h"
+#include "frank_doom_log.h"
 
 // Flash timing configuration for overclocking
 // Must be called BEFORE changing system clock
@@ -60,9 +60,9 @@ int main() {
         sleep_ms(500);
     }
     
-    MURMDOOM_LOG("murmdoom - DOOM for RP2350\n");
-    MURMDOOM_LOG("System Clock: %lu MHz\n", clock_get_hz(clk_sys) / 1000000);
-    MURMDOOM_LOG("Starting Doom...\n");
+    FRANK_DOOM_LOG("frank-doom - DOOM for RP2350\n");
+    FRANK_DOOM_LOG("System Clock: %lu MHz\n", clock_get_hz(clk_sys) / 1000000);
+    FRANK_DOOM_LOG("Starting Doom...\n");
 
     char *argv[] = {"doom", NULL};
     doomgeneric_Create(1, argv);

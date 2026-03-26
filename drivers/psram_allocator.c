@@ -12,7 +12,7 @@
 // PSRAM (CS1) is usually mapped at 0x11000000.
 
 #define PSRAM_BASE 0x11000000
-#define PSRAM_SIZE ((size_t)MURMDOOM_PSRAM_SIZE_BYTES)
+#define PSRAM_SIZE ((size_t)FRANK_DOOM_PSRAM_SIZE_BYTES)
 
 static uint8_t *psram_start = (uint8_t *)PSRAM_BASE;
 // Reserve 512KB for scratch buffers at the beginning
