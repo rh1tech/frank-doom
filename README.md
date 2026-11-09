@@ -1,5 +1,7 @@
-# FRANK DOOM
+# This firmware is not supported anymore!
+Check https://github.com/rh1tech/frank-idtech1 - it has Doom, Doom 2, Heretic, Hexen and Strife
 
+# FRANK DOOM
 Official page: **[frank.rh1.tech](https://frank.rh1.tech/)** — hub for all FRANK boards and firmware.
 
 DOOM for Raspberry Pi Pico 2 (RP2350) with HDMI output, SD card, PS/2 and USB keyboard/mouse, and OPL music.
